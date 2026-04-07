@@ -204,6 +204,39 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <div class="bg-white rounded-lg shadow p-4 mt-6">
+                            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                                <h3 class="font-semibold">后端增强分析（自动采集 / yfinance / AI动态权重）</h3>
+                                <div class="flex items-center gap-2">
+                                    <label class="text-sm text-gray-600">API基地址</label>
+                                    <input id="backend-base-url" class="border rounded px-2 py-1 text-sm w-72" value="http://localhost:8000" />
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap gap-2 mb-4">
+                                <button class="bg-indigo-600 text-white px-3 py-2 rounded text-sm" onclick="fetchAutoNews()">自动采集新闻</button>
+                                <button class="bg-emerald-600 text-white px-3 py-2 rounded text-sm" onclick="fetchVolatility()">获取波动率</button>
+                                <button class="bg-purple-600 text-white px-3 py-2 rounded text-sm" onclick="fetchDynamicWeights()">AI动态权重</button>
+                            </div>
+                            <div class="grid grid-cols-3 gap-4">
+                                <div class="border rounded p-3 bg-gray-50">
+                                    <div class="text-sm text-gray-500 mb-1">采集新闻数</div>
+                                    <div class="text-2xl font-bold" id="api-news-count">-</div>
+                                    <div class="text-xs text-gray-500" id="api-news-feed">-</div>
+                                </div>
+                                <div class="border rounded p-3 bg-gray-50">
+                                    <div class="text-sm text-gray-500 mb-1">年化波动率(最新)</div>
+                                    <div class="text-2xl font-bold" id="api-vol-latest">-</div>
+                                    <div class="text-xs text-gray-500" id="api-vol-regime">-</div>
+                                </div>
+                                <div class="border rounded p-3 bg-gray-50">
+                                    <div class="text-sm text-gray-500 mb-1">AI情绪信号</div>
+                                    <div class="text-2xl font-bold" id="api-ai-sentiment">-</div>
+                                    <div class="text-xs text-gray-500" id="api-ai-regime">-</div>
+                                </div>
+                            </div>
+                            <pre id="api-debug" class="mt-4 bg-slate-900 text-slate-100 text-xs rounded p-3 h-36 overflow-auto">点击上方按钮后显示后端返回结果...</pre>
+                        </div>
                     </div>
                 </div>
 
@@ -848,6 +881,65 @@
             const confidence = Math.min(96, 55 + (Object.values(dimensions).filter(v => v > 55).length * 8));
             const sentimentTag = score >= 60 ? 'positive' : score <= 45 ? 'negative' : 'neutral';
             return { score: Number(score.toFixed(1)), confidence, sentimentTag };
+        }
+
+        function getBackendBaseUrl() {
+            return (document.getElementById('backend-base-url')?.value || 'http://localhost:8000').replace(/\/$/, '');
+        }
+
+        function currentCommodity() {
+            return document.getElementById('analysis-commodity').value;
+        }
+
+        function symbolForVol(commodity) {
+            const map = { WTI: 'WTI', Brent: 'Brent', HH: 'HH', TTF: 'TTF', JKM: 'NG=F', PG: 'BZ=F', PP: 'BZ=F', MB: 'BZ=F', CP: 'BZ=F', FEI: 'BZ=F' };
+            return map[commodity] || commodity;
+        }
+
+        async function fetchAutoNews() {
+            try {
+                const base = getBackendBaseUrl();
+                const commodity = currentCommodity();
+                const res = await fetch(`${base}/api/v1/news/auto-collect?commodity=${encodeURIComponent(commodity)}&limit=20`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                document.getElementById('api-news-count').textContent = data.count ?? '-';
+                document.getElementById('api-news-feed').textContent = (data.feeds || []).slice(0, 1).join(', ') || '-';
+                document.getElementById('api-debug').textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                document.getElementById('api-debug').textContent = `自动采集失败: ${err.message}`;
+            }
+        }
+
+        async function fetchVolatility() {
+            try {
+                const base = getBackendBaseUrl();
+                const commodity = currentCommodity();
+                const symbol = symbolForVol(commodity);
+                const res = await fetch(`${base}/api/v1/quant/yfinance/${encodeURIComponent(symbol)}/volatility?period=1y&interval=1d&window=20`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                document.getElementById('api-vol-latest').textContent = `${data.volatility?.latest_annualized_pct ?? '-'}%`;
+                document.getElementById('api-vol-regime').textContent = `regime: ${data.volatility?.vol_regime ?? '-'}`;
+                document.getElementById('api-debug').textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                document.getElementById('api-debug').textContent = `波动率获取失败: ${err.message}`;
+            }
+        }
+
+        async function fetchDynamicWeights() {
+            try {
+                const base = getBackendBaseUrl();
+                const commodity = currentCommodity();
+                const res = await fetch(`${base}/api/v1/ai/dynamic-weights?commodity=${encodeURIComponent(commodity)}&period=6mo&window=20&use_live_news=true`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                document.getElementById('api-ai-sentiment').textContent = data.ai_signals?.sentiment_score ?? '-';
+                document.getElementById('api-ai-regime').textContent = `vol: ${data.ai_signals?.vol_regime ?? '-'} | news: ${data.ai_signals?.news_samples ?? 0}`;
+                document.getElementById('api-debug').textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                document.getElementById('api-debug').textContent = `AI动态权重失败: ${err.message}`;
+            }
         }
 
         // 保存设置
