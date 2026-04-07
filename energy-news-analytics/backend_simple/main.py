@@ -44,6 +44,18 @@ YFINANCE_SYMBOL_MAP: Dict[str, str] = {
     "HO": "HO=F",  # Heating Oil
 }
 
+BASE_WEIGHTS: Dict[str, Dict[str, float]] = {
+    "default": {"fundamental": 0.30, "macro": 0.15, "sentiment": 0.20, "technical": 0.20, "geopolitical": 0.15},
+    "WTI": {"fundamental": 0.30, "macro": 0.15, "sentiment": 0.20, "technical": 0.20, "geopolitical": 0.15},
+    "Brent": {"fundamental": 0.30, "macro": 0.15, "sentiment": 0.20, "technical": 0.20, "geopolitical": 0.15},
+    "HH": {"fundamental": 0.35, "macro": 0.10, "sentiment": 0.20, "technical": 0.25, "geopolitical": 0.10},
+    "TTF": {"fundamental": 0.33, "macro": 0.12, "sentiment": 0.23, "technical": 0.20, "geopolitical": 0.12},
+    "JKM": {"fundamental": 0.33, "macro": 0.12, "sentiment": 0.23, "technical": 0.20, "geopolitical": 0.12},
+}
+
+POSITIVE_WORDS = ["increase", "surge", "growth", "bullish", "tight", "support", "上涨", "利好", "增长"]
+NEGATIVE_WORDS = ["drop", "fall", "decline", "bearish", "risk", "conflict", "sanction", "down", "下跌", "利空", "冲突", "制裁"]
+
 
 @app.get("/health")
 def health_check() -> Dict[str, Any]:
@@ -146,6 +158,92 @@ def yfinance_volatility(
         },
     }
 
+
+
+
+def _normalize_weights(weights: Dict[str, float]) -> Dict[str, float]:
+    total = sum(max(v, 0.01) for v in weights.values())
+    return {k: round(max(v, 0.01) / total, 4) for k, v in weights.items()}
+
+
+def _sentiment_score_from_texts(texts: List[str]) -> float:
+    if not texts:
+        return 0.0
+    joined = " ".join(texts).lower()
+    pos = sum(joined.count(w) for w in POSITIVE_WORDS)
+    neg = sum(joined.count(w) for w in NEGATIVE_WORDS)
+    raw = (pos - neg) / max(pos + neg, 1)
+    return float(max(-1.0, min(1.0, raw)))
+
+
+@app.get("/api/v1/ai/dynamic-weights")
+def ai_dynamic_weights(
+    commodity: str = Query("WTI", description="品种代码，例如 WTI/Brent/HH/TTF/JKM"),
+    period: str = Query("6mo", description="用于波动率评估的历史区间"),
+    window: int = Query(20, ge=5, le=120, description="滚动波动率窗口"),
+    use_live_news: bool = Query(True, description="是否抓取最新RSS新闻作为情绪输入"),
+) -> Dict[str, Any]:
+    """AI动态权重接口（轻量版）：结合新闻情绪 + 波动率状态调整五维权重。"""
+    base = BASE_WEIGHTS.get(commodity, BASE_WEIGHTS["default"]).copy()
+
+    # 1) 采集新闻情绪
+    news_items: List[Dict[str, Any]] = []
+    if use_live_news:
+        try:
+            news_items = auto_collect_news(commodity=commodity, limit=30).get("items", [])
+        except Exception:
+            news_items = []
+
+    texts = [f"{x.get('title', '')} {x.get('summary', '')}" for x in news_items]
+    sentiment_score = _sentiment_score_from_texts(texts)
+
+    # 2) 评估市场波动率状态
+    vol_score = 0.0
+    vol_regime = "unknown"
+    try:
+        vol_result = yfinance_volatility(symbol=commodity, period=period, interval="1d", window=window)
+        latest_vol = vol_result["volatility"]["latest_annualized_pct"]
+        hv20 = vol_result["volatility"]["hist_vol_20d_pct"]
+        vol_score = float((latest_vol - hv20) / max(hv20, 1e-6))
+        vol_regime = vol_result["volatility"]["vol_regime"]
+    except Exception:
+        latest_vol = None
+        hv20 = None
+
+    # 3) AI规则化动态调权（可替换为LLM服务）
+    adjusted = base.copy()
+    adjusted["sentiment"] += 0.06 * abs(sentiment_score)
+    adjusted["technical"] += 0.05 * max(vol_score, 0)
+    adjusted["geopolitical"] += 0.04 * max(-sentiment_score, 0)
+
+    # 高波动时降低基本面和宏观权重，提升技术/情绪
+    if vol_regime == "high":
+        adjusted["fundamental"] -= 0.03
+        adjusted["macro"] -= 0.02
+        adjusted["technical"] += 0.03
+        adjusted["sentiment"] += 0.02
+
+    normalized = _normalize_weights(adjusted)
+
+    return {
+        "commodity": commodity,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "base_weights": base,
+        "dynamic_weights": normalized,
+        "ai_signals": {
+            "sentiment_score": round(sentiment_score, 4),
+            "volatility_score": round(vol_score, 4),
+            "vol_regime": vol_regime,
+            "latest_volatility_pct": latest_vol,
+            "hist_vol_20d_pct": hv20,
+            "news_samples": len(news_items),
+        },
+        "rationale": [
+            "情绪绝对值越高，情绪因子权重越高",
+            "波动率高于历史基准时，技术因子权重上调",
+            "负面情绪增强时，地缘风险权重上调",
+        ],
+    }
 
 @app.get("/api/v1/visualization/dashboard")
 def dashboard() -> Dict[str, Any]:
