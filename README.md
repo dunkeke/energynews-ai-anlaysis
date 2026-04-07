@@ -1,5 +1,7 @@
 # 能源化工新闻分析软件 - 完整方案文档
 
+> GitHub Pages 入口已改为 `index.html` 并默认跳转到可交互 HTML App：`energy-news-analytics/html_version/index.html`。
+
 ## 文档清单
 
 本目录包含能源化工新闻分析软件的完整技术方案文档，由多个专家组协作完成。
