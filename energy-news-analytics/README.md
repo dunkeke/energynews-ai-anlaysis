@@ -103,6 +103,20 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+#### 轻量后端（建议先本地联调）
+```bash
+cd backend_simple
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+轻量后端新增接口：
+- `GET /api/v1/news/auto-collect?commodity=WTI&limit=20`（自动采集可爬取 RSS 新闻）
+- `GET /api/v1/quant/yfinance/{symbol}/volatility?period=1y&interval=1d&window=20`（历史数据+波动率量化）
+
+
 #### 前端开发
 ```bash
 cd frontend
