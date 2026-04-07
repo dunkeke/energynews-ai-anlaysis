@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>能源化工新闻分析系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; }
+        .sidebar { transition: all 0.3s; }
+        .score-card { transition: transform 0.2s; }
+        .score-card:hover { transform: translateY(-2px); }
+        .alert-red { border-left: 4px solid #ef4444; }
+        .alert-orange { border-left: 4px solid #f97316; }
+        .alert-yellow { border-left: 4px solid #eab308; }
+        .alert-blue { border-left: 4px solid #3b82f6; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .nav-item.active { background: #1e40af; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="flex h-screen">
+        <!-- 侧边栏 -->
+        <aside class="sidebar w-64 bg-slate-800 text-white flex flex-col">
+            <div class="p-4 border-b border-slate-700">
+                <h1 class="text-xl font-bold"><i class="fas fa-chart-line mr-2"></i>能源化工分析</h1>
+            </div>
+            <nav class="flex-1 p-4">
+                <a href="#" class="nav-item active flex items-center p-3 rounded-lg mb-2 hover:bg-slate-700" onclick="showTab('dashboard')">
+                    <i class="fas fa-tachometer-alt w-6"></i>仪表盘
+                </a>
+                <a href="#" class="nav-item flex items-center p-3 rounded-lg mb-2 hover:bg-slate-700" onclick="showTab('analysis')">
+                    <i class="fas fa-chart-bar w-6"></i>品种分析
+                </a>
+                <a href="#" class="nav-item flex items-center p-3 rounded-lg mb-2 hover:bg-slate-700" onclick="showTab('import')">
+                    <i class="fas fa-upload w-6"></i>导入新闻
+                </a>
+                <a href="#" class="nav-item flex items-center p-3 rounded-lg mb-2 hover:bg-slate-700" onclick="showTab('alerts')">
+                    <i class="fas fa-bell w-6"></i>预警中心
+                    <span id="alert-badge" class="ml-auto bg-red-500 text-xs px-2 py-1 rounded-full hidden">0</span>
+                </a>
+                <a href="#" class="nav-item flex items-center p-3 rounded-lg mb-2 hover:bg-slate-700" onclick="showTab('settings')">
+                    <i class="fas fa-cog w-6"></i>系统设置
+                </a>
+            </nav>
+            <div class="p-4 border-t border-slate-700 text-sm text-slate-400">
+                v1.0.0 | 本地版
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="flex-1 overflow-auto">
+            <!-- 顶部栏 -->
+            <header class="bg-white shadow-sm p-4 flex justify-between items-center">
+                <h2 class="text-xl font-semibold text-gray-800" id="page-title">仪表盘</h2>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-gray-500" id="current-time"></span>
+                    <button class="p-2 text-gray-600 hover:text-blue-600" onclick="refreshData()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </header>
+
+            <div class="p-6">
+                <!-- 仪表盘 -->
+                <div id="dashboard" class="tab-content active">
+                    <!-- 统计卡片 -->
+                    <div class="grid grid-cols-4 gap-4 mb-6">
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <div class="text-gray-500 text-sm">24小时新闻数</div>
+                            <div class="text-2xl font-bold text-blue-600" id="stat-news">156</div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <div class="text-gray-500 text-sm">已分析新闻</div>
+                            <div class="text-2xl font-bold text-green-600" id="stat-analyzed">142</div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <div class="text-gray-500 text-sm">活跃预警</div>
+                            <div class="text-2xl font-bold text-red-600" id="stat-alerts">8</div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <div class="text-gray-500 text-sm">市场情绪</div>
+                            <div class="text-2xl font-bold" id="stat-sentiment">+0.15</div>
+                        </div>
+                    </div>
+
+                    <!-- 评分卡片 -->
+                    <div class="grid grid-cols-5 gap-4 mb-6" id="score-cards">
+                        <!-- 动态生成 -->
+                    </div>
+
+                    <!-- 图表区域 -->
+                    <div class="grid grid-cols-2 gap-6 mb-6">
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <h3 class="font-semibold mb-4">多维度评分对比</h3>
+                            <canvas id="radarChart" height="250"></canvas>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <h3 class="font-semibold mb-4">WTI评分趋势</h3>
+                            <canvas id="trendChart" height="250"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 预警和新闻 -->
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-semibold">最近预警</h3>
+                                <a href="#" class="text-blue-600 text-sm" onclick="showTab('alerts')">查看全部</a>
+                            </div>
+                            <div id="recent-alerts" class="space-y-2">
+                                <!-- 动态生成 -->
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-semibold">热门新闻</h3>
+                                <a href="#" class="text-blue-600 text-sm">查看全部</a>
+                            </div>
+                            <div id="top-news" class="space-y-2">
+                                <!-- 动态生成 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 品种分析 -->
+                <div id="analysis" class="tab-content">
+                    <div class="bg-white rounded-lg shadow p-4 mb-6">
+                        <div class="flex space-x-4">
+                            <select id="analysis-commodity" class="border rounded px-3 py-2">
+                                <option value="WTI">WTI原油</option>
+                                <option value="Brent">布伦特原油</option>
+                                <option value="HH">亨利港天然气</option>
+                                <option value="TTF">TTF天然气</option>
+                                <option value="JKM">JKM天然气</option>
+                                <option value="PG">液化气PG</option>
+                                <option value="PP">PP</option>
+                                <option value="MB">MB</option>
+                                <option value="CP">沙特CP</option>
+                                <option value="FEI">远东指数</option>
+                            </select>
+                            <select id="analysis-days" class="border rounded px-3 py-2">
+                                <option value="7">7天</option>
+                                <option value="30">30天</option>
+                                <option value="90">90天</option>
+                            </select>
+                            <button class="bg-blue-600 text-white px-4 py-2 rounded" onclick="analyzeCommodity()">
+                                <i class="fas fa-search mr-2"></i>分析
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="analysis-result" class="hidden">
+                        <div class="grid grid-cols-3 gap-4 mb-6">
+                            <div class="bg-white rounded-lg shadow p-6 text-center">
+                                <div class="text-gray-500 mb-2">综合评分</div>
+                                <div class="text-5xl font-bold" id="analysis-score">72.5</div>
+                                <div class="mt-2">
+                                    <span class="px-3 py-1 rounded-full text-sm" id="analysis-rating">看涨</span>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-6 text-center">
+                                <div class="text-gray-500 mb-2">交易信号</div>
+                                <div class="text-3xl font-bold text-blue-600" id="analysis-signal">买入</div>
+                                <div class="mt-2 text-gray-500">置信度: <span id="analysis-confidence">85%</span></div>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-6">
+                                <div class="text-gray-500 mb-2">关键因子</div>
+                                <div id="analysis-factors" class="flex flex-wrap gap-2">
+                                    <!-- 动态生成 -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-6 mb-6">
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <h3 class="font-semibold mb-4">多维度评分</h3>
+                                <canvas id="analysisRadarChart" height="250"></canvas>
+                            </div>
+                            <div class="bg-white rounded-lg shadow p-4">
+                                <h3 class="font-semibold mb-4">评分趋势</h3>
+                                <canvas id="analysisTrendChart" height="250"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <h3 class="font-semibold mb-4">维度详情</h3>
+                            <table class="w-full">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="p-3 text-left">维度</th>
+                                        <th class="p-3 text-left">评分</th>
+                                        <th class="p-3 text-left">权重</th>
+                                        <th class="p-3 text-left">关键词</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dimension-table">
+                                    <!-- 动态生成 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 导入新闻 -->
+                <div id="import" class="tab-content">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <div class="mb-6">
+                            <div class="flex border-b">
+                                <button class="px-4 py-2 border-b-2 border-blue-600 text-blue-600 import-tab-trigger" data-tab="url" onclick="switchImportTab('url', this)">URL导入</button>
+                                <button class="px-4 py-2 border-b-2 border-transparent import-tab-trigger" data-tab="text" onclick="switchImportTab('text', this)">文本导入</button>
+                                <button class="px-4 py-2 border-b-2 border-transparent import-tab-trigger" data-tab="pdf" onclick="switchImportTab('pdf', this)">PDF导入</button>
+                                <button class="px-4 py-2 border-b-2 border-transparent import-tab-trigger" data-tab="channel" onclick="switchImportTab('channel', this)">自有渠道</button>
+                            </div>
+                        </div>
+
+                        <div id="import-url" class="import-tab">
+                            <div class="mb-4">
+                                <label class="block text-gray-700 mb-2">新闻URL</label>
+                                <input type="text" id="import-url-input" class="w-full border rounded px-3 py-2" placeholder="https://example.com/news/123">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-gray-700 mb-2">关联品种</label>
+                                <div class="flex flex-wrap gap-2">
+                                    <label class="inline-flex items-center"><input type="checkbox" value="WTI" class="commodity-check mr-1"> WTI</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="Brent" class="commodity-check mr-1"> Brent</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="HH" class="commodity-check mr-1"> HH</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="TTF" class="commodity-check mr-1"> TTF</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="JKM" class="commodity-check mr-1"> JKM</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="PG" class="commodity-check mr-1"> PG</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="PP" class="commodity-check mr-1"> PP</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="MB" class="commodity-check mr-1"> MB</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="FEI" class="commodity-check mr-1"> FEI</label>
+                                    <label class="inline-flex items-center"><input type="checkbox" value="CP" class="commodity-check mr-1"> CP</label>
+                                </div>
+                            </div>
+                            <button class="bg-blue-600 text-white px-6 py-2 rounded" onclick="importNews('url')">
+                                <i class="fas fa-link mr-2"></i>导入URL
+                            </button>
+                        </div>
+
+                        <div id="import-text" class="import-tab hidden">
+                            <div class="mb-4">
+                                <label class="block text-gray-700 mb-2">新闻内容</label>
+                                <textarea id="import-text-input" class="w-full border rounded px-3 py-2 h-32" placeholder="粘贴新闻内容..."></textarea>
+                            </div>
+                            <button class="bg-blue-600 text-white px-6 py-2 rounded" onclick="importNews('text')">
+                                <i class="fas fa-file-alt mr-2"></i>导入文本
+                            </button>
+                        </div>
+
+
+                        <div id="import-pdf" class="import-tab hidden">
+                            <div class="mb-4">
+                                <label class="block text-gray-700 mb-2">上传PDF材料</label>
+                                <input type="file" id="import-pdf-input" accept="application/pdf" class="w-full border rounded px-3 py-2">
+                            </div>
+                            <button class="bg-blue-600 text-white px-6 py-2 rounded" onclick="importNews('pdf')">
+                                <i class="fas fa-file-pdf mr-2"></i>解析PDF并导入
+                            </button>
+                        </div>
+
+                        <div id="import-channel" class="import-tab hidden">
+                            <div class="mb-4">
+                                <label class="block text-gray-700 mb-2">渠道名称</label>
+                                <input type="text" id="import-channel-name" class="w-full border rounded px-3 py-2" placeholder="例如：自有调研群、海外船货跟踪、港口一线反馈">
+                            </div>
+                            <div class="mb-4">
+                                <label class="block text-gray-700 mb-2">渠道快讯内容</label>
+                                <textarea id="import-channel-text" class="w-full border rounded px-3 py-2 h-32" placeholder="输入你自己的渠道信息..."></textarea>
+                            </div>
+                            <button class="bg-blue-600 text-white px-6 py-2 rounded" onclick="importNews('channel')">
+                                <i class="fas fa-satellite-dish mr-2"></i>导入自有渠道
+                            </button>
+                        </div>
+
+                        <div id="import-result" class="mt-4 hidden">
+                            <div class="bg-green-50 border border-green-200 rounded p-4">
+                                <div class="flex items-center text-green-700">
+                                    <i class="fas fa-check-circle mr-2"></i>
+                                    <span>导入成功！新闻ID: <span id="import-news-id"></span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 预警中心 -->
+                <div id="alerts" class="tab-content">
+                    <div class="bg-white rounded-lg shadow p-4">
+                        <div class="flex justify-between items-center mb-4">
+                            <div class="flex space-x-2">
+                                <select id="alert-filter" class="border rounded px-3 py-2" onchange="filterAlerts()">
+                                    <option value="">全部级别</option>
+                                    <option value="red">红色</option>
+                                    <option value="orange">橙色</option>
+                                    <option value="yellow">黄色</option>
+                                    <option value="blue">蓝色</option>
+                                </select>
+                                <select id="alert-commodity-filter" class="border rounded px-3 py-2" onchange="filterAlerts()">
+                                    <option value="">全部品种</option>
+                                    <option value="WTI">WTI</option>
+                                    <option value="Brent">Brent</option>
+                                    <option value="HH">HH</option>
+                                </select>
+                            </div>
+                            <button class="text-blue-600" onclick="markAllRead()">全部标记已读</button>
+                        </div>
+                        <div id="alerts-list" class="space-y-2">
+                            <!-- 动态生成 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 系统设置 -->
+                <div id="settings" class="tab-content">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <div class="mb-6">
+                            <h3 class="font-semibold mb-4">通用设置</h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-gray-700 mb-2">数据刷新间隔（分钟）</label>
+                                    <input type="number" value="5" class="border rounded px-3 py-2 w-32">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-700 mb-2">新闻保留天数</label>
+                                    <input type="number" value="90" class="border rounded px-3 py-2 w-32">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-6">
+                            <h3 class="font-semibold mb-4">评分权重配置</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-gray-700 mb-2">基本面权重 (%)</label>
+                                    <input type="number" value="30" class="border rounded px-3 py-2 w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-700 mb-2">宏观面权重 (%)</label>
+                                    <input type="number" value="15" class="border rounded px-3 py-2 w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-700 mb-2">情绪面权重 (%)</label>
+                                    <input type="number" value="20" class="border rounded px-3 py-2 w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-700 mb-2">技术面权重 (%)</label>
+                                    <input type="number" value="20" class="border rounded px-3 py-2 w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-700 mb-2">地缘风险权重 (%)</label>
+                                    <input type="number" value="15" class="border rounded px-3 py-2 w-full">
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="bg-blue-600 text-white px-6 py-2 rounded" onclick="saveSettings()">
+                            <i class="fas fa-save mr-2"></i>保存设置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 数据存储
+        let newsData = JSON.parse(localStorage.getItem('newsData')) || [];
+        let alertsData = JSON.parse(localStorage.getItem('alertsData')) || [];
+        let scoresData = JSON.parse(localStorage.getItem('scoresData')) || {};
+
+        // 品种配置
+        const commodities = {
+            'WTI': { name: 'WTI原油', weights: { fundamental: 0.30, macro: 0.15, sentiment: 0.20, technical: 0.20, geopolitical: 0.15 } },
+            'Brent': { name: '布伦特原油', weights: { fundamental: 0.30, macro: 0.15, sentiment: 0.20, technical: 0.20, geopolitical: 0.15 } },
+            'HH': { name: '亨利港天然气', weights: { fundamental: 0.35, macro: 0.10, sentiment: 0.20, technical: 0.25, geopolitical: 0.10 } },
+            'TTF': { name: 'TTF天然气', weights: { fundamental: 0.35, macro: 0.10, sentiment: 0.25, technical: 0.20, geopolitical: 0.10 } },
+            'JKM': { name: 'JKM天然气', weights: { fundamental: 0.35, macro: 0.10, sentiment: 0.25, technical: 0.20, geopolitical: 0.10 } },
+            'PG': { name: '液化气PG', weights: { fundamental: 0.30, macro: 0.15, sentiment: 0.25, technical: 0.20, geopolitical: 0.10 } },
+            'PP': { name: '丙烷贴水PP', weights: { fundamental: 0.33, macro: 0.12, sentiment: 0.23, technical: 0.20, geopolitical: 0.12 } },
+            'MB': { name: 'Mont Belvieu', weights: { fundamental: 0.35, macro: 0.10, sentiment: 0.25, technical: 0.20, geopolitical: 0.10 } },
+            'CP': { name: '沙特CP', weights: { fundamental: 0.35, macro: 0.15, sentiment: 0.20, technical: 0.20, geopolitical: 0.10 } },
+            'FEI': { name: '远东指数FEI', weights: { fundamental: 0.30, macro: 0.15, sentiment: 0.25, technical: 0.20, geopolitical: 0.10 } }
+        };
+
+        let analysisRadarChart = null;
+        let analysisTrendChart = null;
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            updateTime();
+            setInterval(updateTime, 1000);
+            initDashboard();
+            initCharts();
+            loadAlerts();
+            loadNews();
+        });
+
+        function updateTime() {
+            document.getElementById('current-time').textContent = new Date().toLocaleString('zh-CN');
+        }
+
+        // 切换标签页
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.closest('.nav-item').classList.add('active');
+            document.getElementById('page-title').textContent = {
+                'dashboard': '仪表盘',
+                'analysis': '品种分析',
+                'import': '导入新闻',
+                'alerts': '预警中心',
+                'settings': '系统设置'
+            }[tabId];
+        }
+
+        // 初始化仪表盘
+        function initDashboard() {
+            const scoreCards = document.getElementById('score-cards');
+            const codes = ['WTI', 'Brent', 'HH', 'TTF', 'JKM'];
+            
+            codes.forEach(code => {
+                const score = (Math.random() * 40 + 40).toFixed(1);
+                const rating = score >= 60 ? '看涨' : score >= 45 ? '中性' : '看跌';
+                const color = score >= 60 ? 'text-green-600' : score >= 45 ? 'text-yellow-600' : 'text-red-600';
+                const borderColor = score >= 60 ? 'border-green-500' : score >= 45 ? 'border-yellow-500' : 'border-red-500';
+                
+                scoreCards.innerHTML += `
+                    <div class="score-card bg-white rounded-lg shadow p-4 border-t-4 ${borderColor}">
+                        <h4 class="text-gray-600 text-sm">${code}</h4>
+                        <div class="text-3xl font-bold ${color}">${score}</div>
+                        <div class="mt-2">
+                            <span class="px-2 py-1 bg-gray-100 rounded text-sm">${rating}</span>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-500">24h: ${(Math.random() * 10 - 5).toFixed(1)}</div>
+                    </div>
+                `;
+            });
+        }
+
+        // 初始化图表
+        function initCharts() {
+            // 雷达图
+            const radarCtx = document.getElementById('radarChart').getContext('2d');
+            new Chart(radarCtx, {
+                type: 'radar',
+                data: {
+                    labels: ['基本面', '宏观面', '情绪面', '技术面', '地缘风险'],
+                    datasets: [{
+                        label: 'WTI',
+                        data: [75, 60, 70, 65, 45],
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                        borderColor: 'rgb(59, 130, 246)'
+                    }, {
+                        label: 'Brent',
+                        data: [70, 55, 65, 70, 40],
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        borderColor: 'rgb(16, 185, 129)'
+                    }]
+                },
+                options: {
+                    scales: {
+                        r: {
+                            min: 0,
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // 趋势图
+            const trendCtx = document.getElementById('trendChart').getContext('2d');
+            const labels = Array.from({length: 10}, (_, i) => `${i+1}d`);
+            const data = [55, 58, 62, 60, 65, 68, 70, 72, 74, 72];
+            
+            new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '综合评分',
+                        data: data,
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            min: 0,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+
+        // 加载预警
+        function loadAlerts() {
+            if (alertsData.length === 0) {
+                alertsData = [
+                    { id: '1', level: 'red', message: 'WTI地缘风险急剧上升', commodity: 'WTI', timestamp: new Date().toISOString(), isRead: false },
+                    { id: '2', level: 'orange', message: 'Brent基本面评分显著变化', commodity: 'Brent', timestamp: new Date().toISOString(), isRead: false },
+                    { id: '3', level: 'yellow', message: 'HH综合评分连续下降', commodity: 'HH', timestamp: new Date().toISOString(), isRead: true },
+                    { id: '4', level: 'blue', message: 'PG价格与评分背离', commodity: 'PG', timestamp: new Date().toISOString(), isRead: true }
+                ];
+                localStorage.setItem('alertsData', JSON.stringify(alertsData));
+            }
+            renderAlerts();
+            renderRecentAlerts();
+            updateAlertBadge();
+        }
+
+        function renderAlerts() {
+            const container = document.getElementById('alerts-list');
+            const filter = document.getElementById('alert-filter').value;
+            const commodityFilter = document.getElementById('alert-commodity-filter').value;
+            
+            let filtered = alertsData;
+            if (filter) filtered = filtered.filter(a => a.level === filter);
+            if (commodityFilter) filtered = filtered.filter(a => a.commodity === commodityFilter);
+            
+            container.innerHTML = filtered.map(alert => `
+                <div class="bg-white rounded-lg shadow p-3 alert-${alert.level} ${alert.isRead ? 'opacity-60' : ''}">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="inline-block px-2 py-1 rounded text-xs text-white mb-1 ${getAlertColor(alert.level)}">${getAlertLevelName(alert.level)}</span>
+                            ${alert.commodity ? `<span class="text-sm text-gray-500 ml-2">${alert.commodity}</span>` : ''}
+                            <div class="font-medium">${alert.message}</div>
+                            <div class="text-xs text-gray-400">${new Date(alert.timestamp).toLocaleString()}</div>
+                        </div>
+                        ${!alert.isRead ? `<button class="text-blue-600 text-sm" onclick="markRead('${alert.id}')">标记已读</button>` : '<span class="text-green-600 text-sm"><i class="fas fa-check"></i> 已读</span>'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderRecentAlerts() {
+            const container = document.getElementById('recent-alerts');
+            const recent = alertsData.slice(0, 3);
+            container.innerHTML = recent.map(alert => `
+                <div class="flex items-center p-2 hover:bg-gray-50 rounded alert-${alert.level}">
+                    <span class="w-2 h-2 rounded-full mr-2 ${getAlertDotColor(alert.level)}"></span>
+                    <div class="flex-1">
+                        <div class="text-sm">${alert.message}</div>
+                        <div class="text-xs text-gray-400">${new Date(alert.timestamp).toLocaleTimeString()}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getAlertColor(level) {
+            return { red: 'bg-red-500', orange: 'bg-orange-500', yellow: 'bg-yellow-500', blue: 'bg-blue-500' }[level];
+        }
+
+        function getAlertDotColor(level) {
+            return { red: 'bg-red-500', orange: 'bg-orange-500', yellow: 'bg-yellow-500', blue: 'bg-blue-500' }[level];
+        }
+
+        function getAlertLevelName(level) {
+            return { red: '红色', orange: '橙色', yellow: '黄色', blue: '蓝色' }[level];
+        }
+
+        function updateAlertBadge() {
+            const unread = alertsData.filter(a => !a.isRead).length;
+            const badge = document.getElementById('alert-badge');
+            badge.textContent = unread;
+            badge.classList.toggle('hidden', unread === 0);
+        }
+
+        function markRead(id) {
+            const alert = alertsData.find(a => a.id === id);
+            if (alert) {
+                alert.isRead = true;
+                localStorage.setItem('alertsData', JSON.stringify(alertsData));
+                renderAlerts();
+                updateAlertBadge();
+            }
+        }
+
+        function markAllRead() {
+            alertsData.forEach(a => a.isRead = true);
+            localStorage.setItem('alertsData', JSON.stringify(alertsData));
+            renderAlerts();
+            updateAlertBadge();
+        }
+
+        function filterAlerts() {
+            renderAlerts();
+        }
+
+        // 加载新闻
+        function loadNews() {
+            if (newsData.length === 0) {
+                newsData = [
+                    { id: '1', title: 'OPEC+同意延长减产协议至二季度', source: 'Reuters', sentiment: 'positive', time: new Date().toISOString() },
+                    { id: '2', title: 'EIA原油库存超预期增加500万桶', source: 'EIA', sentiment: 'negative', time: new Date().toISOString() },
+                    { id: '3', title: '欧洲天然气库存降至历史低位', source: 'Platts', sentiment: 'positive', time: new Date().toISOString() },
+                    { id: '4', title: '美联储暗示可能暂停加息', source: 'Bloomberg', sentiment: 'positive', time: new Date().toISOString() },
+                    { id: '5', title: '中国原油进口量同比增长8%', source: '新浪财经', sentiment: 'positive', time: new Date().toISOString() }
+                ];
+                localStorage.setItem('newsData', JSON.stringify(newsData));
+            }
+            renderNews();
+        }
+
+        function renderNews() {
+            const container = document.getElementById('top-news');
+            container.innerHTML = newsData.slice(0, 5).map(news => `
+                <div class="flex items-center p-2 hover:bg-gray-50 rounded">
+                    <div class="flex-1">
+                        <div class="text-sm font-medium">${news.title}</div>
+                        <div class="text-xs text-gray-400">
+                            <span class="mr-2">${news.source}</span>
+                            <span class="${news.sentiment === 'positive' ? 'text-green-600' : news.sentiment === 'negative' ? 'text-red-600' : 'text-gray-600'}">
+                                ${news.sentiment === 'positive' ? '正面' : news.sentiment === 'negative' ? '负面' : '中性'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 品种分析
+        function analyzeCommodity() {
+            const commodity = document.getElementById('analysis-commodity').value;
+            const result = document.getElementById('analysis-result');
+            result.classList.remove('hidden');
+
+            const relatedNews = newsData.filter(n => (n.commodities || []).includes(commodity));
+            const dimList = relatedNews.map(n => n.dimensions).filter(Boolean);
+            const aggregated = ['fundamental', 'macro', 'sentiment', 'technical', 'geopolitical'].reduce((acc, key) => {
+                const values = dimList.map(d => d[key]).filter(v => typeof v === 'number');
+                acc[key] = values.length ? values.reduce((a, b) => a + b, 0) / values.length : (Math.random() * 20 + 45);
+                return acc;
+            }, {});
+
+            const composite = calcCompositeScore(aggregated, commodity);
+            const score = composite.score;
+            const rating = score >= 60 ? '看涨' : score >= 45 ? '中性' : '看跌';
+            const signal = score >= 60 ? '买入' : score >= 45 ? '持有' : '卖出';
+
+            document.getElementById('analysis-score').textContent = score;
+            document.getElementById('analysis-score').className = `text-5xl font-bold ${score >= 60 ? 'text-green-600' : score >= 45 ? 'text-yellow-600' : 'text-red-600'}`;
+            document.getElementById('analysis-rating').textContent = rating;
+            document.getElementById('analysis-rating').className = `px-3 py-1 rounded-full text-sm text-white ${score >= 60 ? 'bg-green-500' : score >= 45 ? 'bg-yellow-500' : 'bg-red-500'}`;
+            document.getElementById('analysis-signal').textContent = signal;
+            document.getElementById('analysis-confidence').textContent = composite.confidence + '%';
+
+            const factors = ['基本面供需', '宏观流动性', '市场情绪', '技术动量', '地缘风险'];
+            document.getElementById('analysis-factors').innerHTML = factors.map(f =>
+                `<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm">${f}</span>`
+            ).join('');
+
+            const dimensions = [
+                { key: 'fundamental', name: '基本面', score: aggregated.fundamental.toFixed(1), weight: `${commodities[commodity].weights.fundamental * 100}%`, keywords: '库存,产量,进出口,开工' },
+                { key: 'macro', name: '宏观面', score: aggregated.macro.toFixed(1), weight: `${commodities[commodity].weights.macro * 100}%`, keywords: '美元,利率,PMI,GDP' },
+                { key: 'sentiment', name: '情绪面', score: aggregated.sentiment.toFixed(1), weight: `${commodities[commodity].weights.sentiment * 100}%`, keywords: '情绪,持仓,预期' },
+                { key: 'technical', name: '技术面', score: aggregated.technical.toFixed(1), weight: `${commodities[commodity].weights.technical * 100}%`, keywords: '趋势,动量,波动' },
+                { key: 'geopolitical', name: '地缘风险', score: aggregated.geopolitical.toFixed(1), weight: `${commodities[commodity].weights.geopolitical * 100}%`, keywords: '冲突,制裁,航运,灾害' }
+            ];
+
+            document.getElementById('dimension-table').innerHTML = dimensions.map(d => `
+                <tr class="border-b">
+                    <td class="p-3">${d.name}</td>
+                    <td class="p-3 font-bold ${d.score >= 60 ? 'text-green-600' : d.score >= 45 ? 'text-yellow-600' : 'text-red-600'}">${d.score}</td>
+                    <td class="p-3">${d.weight}</td>
+                    <td class="p-3 text-sm text-gray-500">${d.keywords}</td>
+                </tr>
+            `).join('');
+
+            setTimeout(() => {
+                if (analysisRadarChart) analysisRadarChart.destroy();
+                if (analysisTrendChart) analysisTrendChart.destroy();
+
+                const ctx = document.getElementById('analysisRadarChart').getContext('2d');
+                analysisRadarChart = new Chart(ctx, {
+                    type: 'radar',
+                    data: {
+                        labels: ['基本面', '宏观面', '情绪面', '技术面', '地缘风险'],
+                        datasets: [{
+                            label: commodity,
+                            data: dimensions.map(d => parseFloat(d.score)),
+                            backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                            borderColor: 'rgb(59, 130, 246)'
+                        }]
+                    },
+                    options: { scales: { r: { min: 0, max: 100 } } }
+                });
+
+                const trendCtx = document.getElementById('analysisTrendChart').getContext('2d');
+                const trendSeries = Array.from({length: 10}, (_, i) => Math.max(20, Math.min(95, score - 6 + i * 1.2 + (Math.random() * 4 - 2))));
+                analysisTrendChart = new Chart(trendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: Array.from({length: 10}, (_, i) => `${i+1}d`),
+                        datasets: [{
+                            label: '综合评分',
+                            data: trendSeries,
+                            borderColor: 'rgb(59, 130, 246)',
+                            fill: true,
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.4
+                        }]
+                    },
+                    options: { scales: { y: { min: 0, max: 100 } } }
+                });
+            }, 100);
+        }
+
+        // 导入新闻
+        function switchImportTab(tab, trigger = null) {
+            document.querySelectorAll('.import-tab').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`import-${tab}`).classList.remove('hidden');
+            document.querySelectorAll('.import-tab-trigger').forEach(btn => {
+                btn.classList.remove('border-blue-600', 'text-blue-600');
+                btn.classList.add('border-transparent');
+            });
+            const activeTrigger = trigger || document.querySelector(`.import-tab-trigger[data-tab='${tab}']`);
+            if (activeTrigger) {
+                activeTrigger.classList.add('border-blue-600', 'text-blue-600');
+                activeTrigger.classList.remove('border-transparent');
+            }
+        }
+
+        async function importNews(type) {
+            let content = '';
+            let sourceName = '';
+
+            if (type === 'url') {
+                content = document.getElementById('import-url-input').value.trim();
+                sourceName = 'URL导入';
+            } else if (type === 'text') {
+                content = document.getElementById('import-text-input').value.trim();
+                sourceName = '文本导入';
+            } else if (type === 'channel') {
+                const channel = document.getElementById('import-channel-name').value.trim();
+                const text = document.getElementById('import-channel-text').value.trim();
+                sourceName = channel || '自有渠道';
+                content = text;
+            } else if (type === 'pdf') {
+                const file = document.getElementById('import-pdf-input').files[0];
+                if (!file) {
+                    alert('请先上传PDF文件');
+                    return;
+                }
+                sourceName = `PDF:${file.name}`;
+                content = await extractTextFromPdf(file);
+            }
+
+            if (!content) {
+                alert('请输入内容');
+                return;
+            }
+
+            const selectedCommodities = Array.from(document.querySelectorAll('.commodity-check:checked')).map(el => el.value);
+            const matchedCommodities = selectedCommodities.length ? selectedCommodities : detectCommodities(content);
+            const dimensions = scoreDimensions(content, matchedCommodities);
+            const composite = calcCompositeScore(dimensions, matchedCommodities[0] || 'WTI');
+
+            const news = {
+                id: Date.now().toString(),
+                title: content.substring(0, 80) + (content.length > 80 ? '...' : ''),
+                content,
+                source: sourceName,
+                sentiment: composite.sentimentTag,
+                commodities: matchedCommodities,
+                dimensions,
+                compositeScore: composite.score,
+                confidence: composite.confidence,
+                time: new Date().toISOString()
+            };
+
+            newsData.unshift(news);
+            localStorage.setItem('newsData', JSON.stringify(newsData));
+
+            document.getElementById('import-news-id').textContent = news.id;
+            document.getElementById('import-result').classList.remove('hidden');
+            renderNews();
+
+            if (type === 'url') document.getElementById('import-url-input').value = '';
+            if (type === 'text') document.getElementById('import-text-input').value = '';
+            if (type === 'channel') {
+                document.getElementById('import-channel-name').value = '';
+                document.getElementById('import-channel-text').value = '';
+            }
+            if (type === 'pdf') document.getElementById('import-pdf-input').value = '';
+        }
+
+        async function extractTextFromPdf(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const maxPages = Math.min(pdf.numPages, 5);
+            let text = '';
+            for (let i = 1; i <= maxPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                text += content.items.map(item => item.str).join(' ') + ' ';
+            }
+            return text.trim();
+        }
+
+        function detectCommodities(content) {
+            const mapping = {
+                WTI: ['wti', '西德州'], Brent: ['brent', '布伦特'], HH: ['henry hub', 'hh', '亨利港'],
+                TTF: ['ttf'], JKM: ['jkm'], PG: ['pg', '液化气'], PP: ['pp'], MB: ['mont belvieu', 'mb'],
+                FEI: ['fei', '远东指数'], CP: ['cp', '沙特cp']
+            };
+            const text = content.toLowerCase();
+            return Object.keys(mapping).filter(code => mapping[code].some(k => text.includes(k))) || [];
+        }
+
+        function scoreDimensions(content, commodities) {
+            const keywordMap = {
+                fundamental: ['库存', '产量', '减产', '出口', '进口', '开工率', '裂解价差', '船货', '供给', '需求'],
+                macro: ['美元', '利率', '通胀', '就业', 'pmi', 'gdp', '联储', '财政'],
+                sentiment: ['看涨', '看跌', '恐慌', '乐观', '悲观', '预期', '持仓'],
+                technical: ['均线', '突破', '支撑', '阻力', '波动率', '动量', 'macd', 'rsi'],
+                geopolitical: ['制裁', '冲突', '停火', '海峡', '港口', '飓风', '地缘', '政策风险']
+            };
+            const text = content.toLowerCase();
+            const sentimentBias = (text.includes('上涨') || text.includes('增产')) ? 8 : (text.includes('下跌') || text.includes('减产')) ? -8 : 0;
+            const base = 48 + Math.min(commodities.length * 2, 8);
+            const result = {};
+            Object.entries(keywordMap).forEach(([k, words]) => {
+                const hit = words.filter(w => text.includes(w.toLowerCase())).length;
+                result[k] = Math.max(0, Math.min(100, base + hit * 8 + sentimentBias + (Math.random() * 6 - 3)));
+            });
+            return result;
+        }
+
+        function calcCompositeScore(dimensions, commodityCode) {
+            const weights = commodities[commodityCode]?.weights || commodities['WTI'].weights;
+            const score = dimensions.fundamental * weights.fundamental
+                + dimensions.macro * weights.macro
+                + dimensions.sentiment * weights.sentiment
+                + dimensions.technical * weights.technical
+                + dimensions.geopolitical * weights.geopolitical;
+            const confidence = Math.min(96, 55 + (Object.values(dimensions).filter(v => v > 55).length * 8));
+            const sentimentTag = score >= 60 ? 'positive' : score <= 45 ? 'negative' : 'neutral';
+            return { score: Number(score.toFixed(1)), confidence, sentimentTag };
+        }
+
+        // 保存设置
+        function saveSettings() {
+            alert('设置已保存！');
+        }
+
+        // 刷新数据
+        function refreshData() {
+            location.reload();
+        }
+    </script>
+</body>
+</html>
