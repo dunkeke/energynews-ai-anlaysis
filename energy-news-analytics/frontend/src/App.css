@@ -1,0 +1,186 @@
+.App {
+  text-align: center;
+}
+
+.logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.site-layout-background {
+  background: #fff;
+}
+
+/* 评分卡片样式 */
+.score-card {
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.score-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 预警级别样式 */
+.alert-level-red {
+  color: #ff4d4f;
+  font-weight: bold;
+}
+
+.alert-level-orange {
+  color: #faad14;
+  font-weight: bold;
+}
+
+.alert-level-yellow {
+  color: #fadb14;
+  font-weight: bold;
+}
+
+.alert-level-blue {
+  color: #1890ff;
+  font-weight: bold;
+}
+
+/* 图表容器 */
+.chart-container {
+  width: 100%;
+  height: 350px;
+}
+
+/* 响应式布局 */
+@media (max-width: 768px) {
+  .ant-layout-sider {
+    display: none;
+  }
+  
+  .ant-layout {
+    margin-left: 0 !important;
+  }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+/* 加载动画 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 400px;
+}
+
+/* 标签样式 */
+.commodity-tag {
+  margin: 2px;
+}
+
+/* 列表项悬停效果 */
+.list-item-hover:hover {
+  background-color: #f5f5f5;
+  cursor: pointer;
+}
+
+/* 统计卡片 */
+.statistic-card {
+  text-align: center;
+}
+
+.statistic-card .ant-statistic-title {
+  font-size: 14px;
+  color: #666;
+}
+
+.statistic-card .ant-statistic-content {
+  font-size: 28px;
+  font-weight: bold;
+}
+
+/* 时间轴 */
+.timeline-item {
+  padding: 8px 0;
+}
+
+/* 预览模态框 */
+.preview-modal .ant-modal-body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* 导入区域 */
+.import-area {
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.import-area:hover {
+  border-color: #1890ff;
+}
+
+/* 文件列表 */
+.file-list {
+  margin-top: 16px;
+}
+
+.file-list-item {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+/* 进度条 */
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  background-color: #f0f0f0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: #1890ff;
+  transition: width 0.3s ease;
+}
