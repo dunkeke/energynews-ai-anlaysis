@@ -164,6 +164,8 @@ streamlit run streamlit_app.py
 - 动态权重（情绪 + 波动率）
 - NotebookLM 市场简报（SDK可用时走真实输出，不可用时自动回退）
 
+> 若你在 Streamlit Cloud 仅部署了前端而没有同时启动 FastAPI 后端，建议在侧边栏切换到 `Standalone（无后端）` 模式。该模式可直接抓取 RSS 并给出内置 mock 分析，保证页面可用；但若要真实 NotebookLM 输出，仍需可访问的后端 API + notebooklm-py 配置。
+
 
 #### 前端开发
 ```bash
