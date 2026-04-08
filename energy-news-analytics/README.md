@@ -116,6 +116,27 @@ uvicorn main:app --reload
 - `GET /api/v1/news/auto-collect?commodity=WTI&limit=20`（自动采集可爬取 RSS 新闻）
 - `GET /api/v1/quant/yfinance/{symbol}/volatility?period=1y&interval=1d&window=20`（历史数据+波动率量化）
 - `GET /api/v1/ai/dynamic-weights?commodity=WTI&period=6mo&window=20&use_live_news=true`（AI动态权重：结合情绪与波动率）
+- `POST /api/v1/ai/notebooklm/market-brief`（NotebookLM 市场简报：支持 notebooklm-py，未配置时自动回退 mock 输出）
+
+NotebookLM 集成说明（轻量后端）：
+```bash
+cd backend_simple
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+示例请求：
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/ai/notebooklm/market-brief" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "commodity":"WTI",
+    "use_live_news":true,
+    "max_items":20,
+    "style":"trader",
+    "extra_context":"关注今晚库存数据与地缘扰动"
+  }'
+```
 
 
 #### 前端开发

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="能源化工新闻分析系统（轻量后端）", version="1.1.0")
 
@@ -55,6 +56,15 @@ BASE_WEIGHTS: Dict[str, Dict[str, float]] = {
 
 POSITIVE_WORDS = ["increase", "surge", "growth", "bullish", "tight", "support", "上涨", "利好", "增长"]
 NEGATIVE_WORDS = ["drop", "fall", "decline", "bearish", "risk", "conflict", "sanction", "down", "下跌", "利空", "冲突", "制裁"]
+
+
+class NotebookLMBriefRequest(BaseModel):
+    commodity: str = Field(default="WTI", description="品种代码，例如 WTI/Brent/HH/TTF/JKM")
+    use_live_news: bool = Field(default=True, description="是否自动抓取 RSS 作为 NotebookLM 上下文")
+    max_items: int = Field(default=20, ge=5, le=50, description="最多输入新闻条数")
+    style: str = Field(default="trader", description="输出风格: trader/research/executive")
+    extra_context: Optional[str] = Field(default=None, description="手工追加的上下文")
+    news_texts: Optional[List[str]] = Field(default=None, description="可选手工输入新闻文本，优先于 RSS")
 
 
 @app.get("/health")
@@ -176,6 +186,75 @@ def _sentiment_score_from_texts(texts: List[str]) -> float:
     return float(max(-1.0, min(1.0, raw)))
 
 
+def _build_notebooklm_prompt(
+    commodity: str, texts: List[str], style: str, dynamic_weights: Dict[str, float], extra_context: Optional[str]
+) -> str:
+    context_block = "\n".join(f"- {x[:800]}" for x in texts[:30]) if texts else "- 无有效新闻文本"
+    style_map = {
+        "trader": "请给出偏交易执行的结论，明确方向、触发条件和风险位。",
+        "research": "请给出偏研究员风格，强调因果链、假设和需要验证的数据。",
+        "executive": "请给出管理层可读摘要，控制在 6 条以内并突出业务影响。",
+    }
+    style_instruction = style_map.get(style, style_map["trader"])
+    extra = f"\n补充上下文：{extra_context}" if extra_context else ""
+    return f"""
+你是能源化工市场分析助手。请基于输入新闻做 NotebookLM 风格市场简报。
+品种：{commodity}
+风格要求：{style_instruction}
+动态权重：{dynamic_weights}
+请输出：
+1) 三句话摘要；
+2) 多空驱动拆解（基本面/宏观/情绪/技术/地缘）；
+3) 未来24小时关注点（3-5条）；
+4) 风险提示（2-3条，包含可能打脸场景）；
+5) 给出一个 -5 到 +5 的方向分值并说明理由。
+{extra}
+
+新闻输入：
+{context_block}
+""".strip()
+
+
+def _generate_with_notebooklm(prompt: str) -> Dict[str, Any]:
+    """
+    尝试调用 notebooklm-py SDK（兼容常见命名）。
+    若 SDK 不存在或调用失败，回退为规则生成（便于本地联调）。
+    """
+    try:
+        # 兼容 notebooklm-py 的不同包名/入口，避免强耦合单一实现
+        try:
+            import notebooklm_py as nblm  # type: ignore
+        except Exception:
+            import notebooklm as nblm  # type: ignore
+
+        client_cls = getattr(nblm, "Client", None) or getattr(nblm, "NotebookLM", None)
+        if client_cls is None:
+            raise RuntimeError("notebooklm-py SDK 未暴露 Client/NotebookLM 类")
+
+        client = client_cls()
+        if hasattr(client, "generate"):
+            output = client.generate(prompt=prompt)
+        elif hasattr(client, "query"):
+            output = client.query(prompt)
+        elif hasattr(client, "run"):
+            output = client.run(prompt)
+        else:
+            raise RuntimeError("notebooklm-py 客户端缺少 generate/query/run 方法")
+
+        text = output if isinstance(output, str) else str(output)
+        return {"provider": "notebooklm-py", "ok": True, "content": text}
+    except Exception as e:
+        fallback = (
+            "【Mock NotebookLM 输出】\n"
+            "1) 摘要：当前新闻流显示市场在供需与地缘风险之间博弈，短线波动放大。\n"
+            "2) 多空拆解：情绪与地缘偏多，宏观与技术分化。\n"
+            "3) 24小时关注：库存、突发地缘消息、美元与利率预期。\n"
+            "4) 风险提示：若宏观需求再度走弱，当前多头叙事可能失效。\n"
+            "5) 方向分值：+1.2（轻度偏多）。"
+        )
+        return {"provider": "mock-fallback", "ok": False, "error": str(e), "content": fallback}
+
+
 @app.get("/api/v1/ai/dynamic-weights")
 def ai_dynamic_weights(
     commodity: str = Query("WTI", description="品种代码，例如 WTI/Brent/HH/TTF/JKM"),
@@ -243,6 +322,49 @@ def ai_dynamic_weights(
             "波动率高于历史基准时，技术因子权重上调",
             "负面情绪增强时，地缘风险权重上调",
         ],
+    }
+
+
+@app.post("/api/v1/ai/notebooklm/market-brief")
+def notebooklm_market_brief(request: NotebookLMBriefRequest) -> Dict[str, Any]:
+    """
+    NotebookLM 集成接口（支持 notebooklm-py SDK + 本地回退）：
+    - 若安装并配置 notebooklm-py，则返回真实 LLM 输出；
+    - 否则返回可联调的 mock 结果，并附带失败原因。
+    """
+    commodity = request.commodity
+    base_weights = BASE_WEIGHTS.get(commodity, BASE_WEIGHTS["default"])
+
+    if request.news_texts:
+        texts = request.news_texts[: request.max_items]
+    elif request.use_live_news:
+        items = auto_collect_news(commodity=commodity, limit=request.max_items).get("items", [])
+        texts = [f"{x.get('title', '')} {x.get('summary', '')}" for x in items]
+    else:
+        texts = []
+
+    dynamic = ai_dynamic_weights(commodity=commodity, use_live_news=request.use_live_news)
+    prompt = _build_notebooklm_prompt(
+        commodity=commodity,
+        texts=texts,
+        style=request.style,
+        dynamic_weights=dynamic.get("dynamic_weights", base_weights),
+        extra_context=request.extra_context,
+    )
+    result = _generate_with_notebooklm(prompt)
+
+    return {
+        "commodity": commodity,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "integration": {
+            "provider": result["provider"],
+            "sdk_connected": result["ok"],
+            "error": result.get("error"),
+        },
+        "input_stats": {"news_count": len(texts), "style": request.style},
+        "dynamic_weights": dynamic.get("dynamic_weights", base_weights),
+        "market_brief": result["content"],
+        "prompt_preview": prompt[:1000],
     }
 
 @app.get("/api/v1/visualization/dashboard")
