@@ -138,6 +138,23 @@ curl -X POST "http://127.0.0.1:8000/api/v1/ai/notebooklm/market-brief" \
   }'
 ```
 
+### Streamlit Python化前端（推荐）
+
+如果你希望“前后端都 Python 化”并快速把 NotebookLM 能力展示出来，可直接使用项目内置 Streamlit 页面：
+
+```bash
+cd energy-news-analytics
+python -m venv venv
+source venv/bin/activate
+pip install -r backend_simple/requirements.txt
+streamlit run streamlit_app.py
+```
+
+默认会在浏览器打开本地页面（通常是 `http://localhost:8501`），包含三大模块：
+- 新闻采集（RSS）
+- 动态权重（情绪 + 波动率）
+- NotebookLM 市场简报（SDK可用时走真实输出，不可用时自动回退）
+
 
 #### 前端开发
 ```bash
