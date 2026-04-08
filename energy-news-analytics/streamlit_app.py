@@ -8,9 +8,12 @@ import pandas as pd
 import requests
 import streamlit as st
 
+APP_BUILD = "2026-04-08-standalone-v2"
+
 st.set_page_config(page_title="能源化工市场智能分析", page_icon="📊", layout="wide")
 st.title("📊 能源化工市场信息分析（NotebookLM + Python）")
 st.caption("支持两种模式：连接 FastAPI 后端（生产）或离线直连 RSS 的独立模式（演示/应急）。")
+st.caption(f"Build: `{APP_BUILD}`")
 
 
 def _safe_get(base_url: str, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -108,6 +111,7 @@ commodities: List[str] = ["WTI", "Brent", "HH", "TTF", "JKM", "PG", "PP", "MB", 
 
 with st.sidebar:
     st.header("参数设置")
+    st.caption(f"当前版本: {APP_BUILD}")
     backend_url = st.text_input("后端地址", value="http://127.0.0.1:8000")
     run_mode = st.radio("运行模式", ["Backend API（推荐）", "Standalone（无后端）"], index=0)
     selected_commodity = st.selectbox("品种", commodities, index=0)

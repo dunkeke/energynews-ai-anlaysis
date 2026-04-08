@@ -166,6 +166,9 @@ streamlit run streamlit_app.py
 
 > 若你在 Streamlit Cloud 仅部署了前端而没有同时启动 FastAPI 后端，建议在侧边栏切换到 `Standalone（无后端）` 模式。该模式可直接抓取 RSS 并给出内置 mock 分析，保证页面可用；但若要真实 NotebookLM 输出，仍需可访问的后端 API + notebooklm-py 配置。
 
+排查提示：
+- 页面右上会显示 `Build: 2026-04-08-standalone-v2`。若你日志仍出现 `from backend_simple.main import` 的报错，说明 Cloud 仍在跑旧版本，请确认已切换到最新提交并重新部署。
+
 
 #### 前端开发
 ```bash
